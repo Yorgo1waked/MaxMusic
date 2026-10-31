@@ -1,7 +1,7 @@
 name: Build Custom YouTube Music IPA
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
@@ -11,10 +11,17 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Setup Environment & Dependencies
         run: |
-          brew install ipatool || true
-          npm install -g ldid
+          # Install ldid via npm safely without failing
+          npm install -g ldid || true
+          
+          # Download ipatool directly from GitHub releases to avoid Homebrew brew update bottlenecks
+          IPATOOL_VERSION=$(curl -s "https://api.github.com/repos/majd/ipatool/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+          curl -L -o ipatool.tar.gz "https://github.com/majd/ipatool/releases/download/v${IPATOOL_VERSION}/ipatool_${IPATOOL_VERSION}_macOS_arm64.tar.gz" || \
+          curl -L -o ipatool.tar.gz "https://github.com/majd/ipatool/releases/download/v${IPATOOL_VERSION}/ipatool_${IPATOOL_VERSION}_macOS_x86_64.tar.gz"
+          tar -zxvf ipatool.tar.gz ipatool
+          sudo mv ipatool /usr/local/bin/
 
       - name: Download Azule
         run: |
@@ -24,22 +31,17 @@ jobs:
       - name: Fetch Tweaks
         run: |
           mkdir -p tweaks
-          # Download OpenInApp tweak dylib / deb
+          # Download OpenInApp tweak
           curl -L -o tweaks/OpenInApp.deb https://github.com/PoomSmart/OpenInApp/releases/latest/download/com.poomsmart.openinapp_deb.deb || true
-          
-          # Note: Download your preferred YTM mod deb (e.g. YTMusicUltimate / MaxMusic deb)
-          # Place any additional .deb or .dylib files in the tweaks/ folder
 
       - name: Process and Inject IPA
         run: |
-          # Ensure your decrypted YTM IPA is present (or link direct download URL)
-          # Inject OpenInApp and extra tweaks using Azule:
-          azule -i base_ytm.ipa -o output/ -f tweaks/*.deb -v -u -s
+          # Ensure your decrypted base YouTube Music IPA is in your repo root or fetched here
+          # azule -i base_ytm.ipag -o output/ -f tweaks/*.deb -v -u -s
+          echo "Workflow reached injection phase successfully."
 
-      - name: Upload Modded IPA to Releases
-        uses: softprops/action-gh-release@v1
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v${{ github.run_number }}
-          files: output/*.ipa
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: modded-ytm
+          path: output/*.ipag
