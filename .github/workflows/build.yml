@@ -215,9 +215,9 @@ jobs:
       - name: Inject tweaks with Azule
         run: |
           mkdir -p output
-          debs=(ytmult.deb)
-          if [ -s tweaks/OpenInApp.deb ]; then
-            debs+=(tweaks/OpenInApp.deb)
+          debs=("$PWD/ytmult.deb")
+          if [ -s "$PWD/tweaks/OpenInApp.deb" ]; then
+            debs+=("$PWD/tweaks/OpenInApp.deb")
           else
             echo "::warning::OpenInApp deb is unavailable; continuing without it."
           fi
