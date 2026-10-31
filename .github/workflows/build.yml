@@ -2,46 +2,253 @@ name: Build Custom YouTube Music IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: Direct URL to a decrypted YouTube Music IPA
+        required: false
+        default: https://site--linkfilesbot--c9wr46mbxrhc.code.run/download/6912261444/2163101
+        type: string
+      display_name:
+        description: App display name
+        required: false
+        default: YouTube Music
+        type: string
+      bundle_id:
+        description: Bundle identifier
+        required: false
+        default: com.google.ios.youtubemusic
+        type: string
+      enable_rymd:
+        description: Build and inject Return-YouTube-Music-Dislikes
+        required: false
+        default: true
+        type: boolean
+      enable_ytmabc:
+        description: Build and inject YTMABConfig
+        required: false
+        default: true
+        type: boolean
+      enable_youmusicpip:
+        description: Build and inject YouMusicPiP
+        required: false
+        default: false
+        type: boolean
+      enable_volumeboostyt:
+        description: Build and inject VolumeBoostYT
+        required: false
+        default: true
+        type: boolean
+      enable_openinapp:
+        description: Inject OpenInApp when a working deb URL is provided
+        required: false
+        default: false
+        type: boolean
+      openinapp_deb_url:
+        description: Direct URL to an OpenInApp deb file
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  THEOS: ${{ github.workspace }}/theos
 
 jobs:
   build:
+    name: Build MaxMusic IPA
     runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      IPA_URL: ${{ inputs.ipa_url }}
+      DISPLAY_NAME: ${{ inputs.display_name }}
+      BUNDLE_ID: ${{ inputs.bundle_id }}
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
 
-      - name: Setup Environment & Dependencies
+      - name: Install dependencies
+        run: brew install make ldid libplist
+
+      - name: Add GNU make to PATH
+        run: echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Cache Theos
+        id: theos
+        uses: actions/cache@v5.0.3
+        with:
+          path: theos/
+          key: theos_cache_9bc7340
+
+      - name: Setup Theos
+        if: steps.theos.outputs.cache-hit != 'true'
+        uses: actions/checkout@v6.0.2
+        with:
+          repository: theos/theos
+          ref: 9bc73406cf80b711ef4d02c15ff1dedc4478a275
+          path: theos
+          submodules: recursive
+
+      - name: Download iOS SDK
+        if: steps.theos.outputs.cache-hit != 'true'
         run: |
-          # Install ldid via npm safely without failing
-          npm install -g ldid || true
-          
-          # Download ipatool directly from GitHub releases to avoid Homebrew brew update bottlenecks
-          IPATOOL_VERSION=$(curl -s "https://api.github.com/repos/majd/ipatool/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
-          curl -L -o ipatool.tar.gz "https://github.com/majd/ipatool/releases/download/v${IPATOOL_VERSION}/ipatool_${IPATOOL_VERSION}_macOS_arm64.tar.gz" || \
-          curl -L -o ipatool.tar.gz "https://github.com/majd/ipatool/releases/download/v${IPATOOL_VERSION}/ipatool_${IPATOOL_VERSION}_macOS_x86_64.tar.gz"
-          tar -zxvf ipatool.tar.gz ipatool
-          sudo mv ipatool /usr/local/bin/
+          git clone --quiet -n --depth=1 --filter=tree:0 https://github.com/theos/sdks.git sdks
+          cd sdks
+          git sparse-checkout set --no-cone iPhoneOS16.5.sdk
+          git checkout
+          mv ./*.sdk "$THEOS/sdks"
+
+      - name: Validate base IPA URL
+        run: |
+          curl -fL --retry 5 --retry-delay 2 -r 0-1023 -o sample.part "$IPA_URL"
+          file_type="$(file --mime-type -b sample.part)"
+          if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
+            echo "::error::Validation failed: the URL did not return an IPA. Detected type: $file_type"
+            exit 1
+          fi
+
+      - name: Download base IPA
+        run: |
+          curl -fL --retry 5 --retry-delay 2 -o ytm.ipa "$IPA_URL"
+          unzip -tq ytm.ipa > /dev/null
+          unzip -p ytm.ipa Payload/YouTubeMusic.app/Info.plist > ytm-info.plist
+          YTM_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' ytm-info.plist)"
+          TWEAK_VERSION="$(sed -n 's/^PACKAGE_VERSION[[:space:]]*=[[:space:]]*//p' Makefile | head -1)"
+          echo "YTM_VERSION=$YTM_VERSION" >> "$GITHUB_ENV"
+          echo "TWEAK_VERSION=$TWEAK_VERSION" >> "$GITHUB_ENV"
+          echo "OUTPUT_NAME=MaxMusic_${TWEAK_VERSION}_$YTM_VERSION" >> "$GITHUB_ENV"
+          if ! unzip -l ytm.ipa | grep -q 'Payload/YouTubeMusic.app/PlugIns/.*\.appex/Info.plist'; then
+            echo "::error::The base IPA does not contain app extensions."
+            exit 1
+          fi
+
+      - name: Clone headers
+        run: |
+          for repo in YouTubeHeader PSHeader YouTubeMusicHeader; do
+            if [ -d "$THEOS/include/$repo" ]; then
+              git -C "$THEOS/include/$repo" pull --ff-only
+            else
+              git clone --quiet --depth=1 "https://github.com/PoomSmart/$repo.git" "$THEOS/include/$repo"
+            fi
+          done
+
+      - name: Clone Return-YouTube-Dislikes
+        if: ${{ inputs.enable_rymd }}
+        run: git clone --quiet --depth=1 https://github.com/PoomSmart/Return-YouTube-Dislikes.git
+
+      - name: Clone Return-YouTube-Music-Dislikes
+        if: ${{ inputs.enable_rymd }}
+        run: git clone --quiet --depth=1 https://github.com/PoomSmart/Return-YouTube-Music-Dislikes.git
+
+      - name: Clone YTMABConfig
+        if: ${{ inputs.enable_ytmabc }}
+        run: git clone --quiet --depth=1 https://github.com/PoomSmart/YTMABConfig.git
+
+      - name: Clone YouPiP
+        if: ${{ inputs.enable_youmusicpip }}
+        run: git clone --quiet --depth=1 https://github.com/PoomSmart/YouPiP.git
+
+      - name: Clone YouMusicPiP
+        if: ${{ inputs.enable_youmusicpip }}
+        run: git clone --quiet --depth=1 https://github.com/PoomSmart/YouMusicPiP.git
+
+      - name: Clone VolumeBoostYT
+        if: ${{ inputs.enable_volumeboostyt }}
+        run: git clone --quiet --depth=1 https://github.com/VasirakCalgux/VolumeBoostYT.git
+
+      - name: Build Return-YouTube-Music-Dislikes
+        if: ${{ inputs.enable_rymd }}
+        run: |
+          cd Return-YouTube-Music-Dislikes
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          mv packages/*.deb ../rymd.deb
+
+      - name: Build YTMABConfig
+        if: ${{ inputs.enable_ytmabc }}
+        run: |
+          cd YTMABConfig
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          mv packages/*.deb ../ytmabc.deb
+
+      - name: Build YouMusicPiP
+        if: ${{ inputs.enable_youmusicpip }}
+        run: |
+          cd YouMusicPiP
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          mv packages/*.deb ../youmusicpip.deb
+
+      - name: Build VolumeBoostYT
+        if: ${{ inputs.enable_volumeboostyt }}
+        run: |
+          cd VolumeBoostYT
+          make clean package DEBUG=0 FINALPACKAGE=1
+          mv packages/*.deb ../volumeboostyt.deb
+
+      - name: Build MaxMusic tweak
+        run: |
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless SIDELOADING=1
+          mv packages/*.deb ytmult.deb
+
+      - name: Fetch OpenInApp
+        if: ${{ inputs.enable_openinapp && inputs.openinapp_deb_url != '' }}
+        continue-on-error: true
+        run: |
+          mkdir -p tweaks
+          rm -f tweaks/OpenInApp.deb tweaks/OpenInApp.deb.tmp
+          curl -fL --retry 3 --retry-delay 2 -o tweaks/OpenInApp.deb.tmp "${{ inputs.openinapp_deb_url }}"
+          test -s tweaks/OpenInApp.deb.tmp
+          mv tweaks/OpenInApp.deb.tmp tweaks/OpenInApp.deb
 
       - name: Download Azule
         run: |
-          git clone https://github.com/maccan/Azule.git ~/Azule
-          sudo ln -sf ~/Azule/azule /usr/local/bin/azule
+          git clone --quiet --depth=1 https://github.com/mpelteshki/Azule.git "$RUNNER_TEMP/Azule"
+          chmod +x "$RUNNER_TEMP/Azule/azule" "$RUNNER_TEMP"/Azule/bin/darwin/*
 
-      - name: Fetch Tweaks
+      - name: Inject tweaks with Azule
         run: |
-          mkdir -p tweaks
-          # Download OpenInApp tweak
-          curl -L -o tweaks/OpenInApp.deb https://github.com/PoomSmart/OpenInApp/releases/latest/download/com.poomsmart.openinapp_deb.deb || true
+          mkdir -p output
+          debs=(ytmult.deb)
+          if [ -s tweaks/OpenInApp.deb ]; then
+            debs+=(tweaks/OpenInApp.deb)
+          else
+            echo "::warning::OpenInApp deb is unavailable; continuing without it."
+          fi
+          "$RUNNER_TEMP/Azule/azule" -UuS -v -p "$DISPLAY_NAME" -b "$BUNDLE_ID" -i ytm.ipa -o "output/${OUTPUT_NAME}.ipa" -f "${debs[@]}"
 
-      - name: Process and Inject IPA
+      - name: Verify IPA
         run: |
-          # Ensure your decrypted base YouTube Music IPA is in your repo root or fetched here
-          # azule -i base_ytm.ipag -o output/ -f tweaks/*.deb -v -u -s
-          echo "Workflow reached injection phase successfully."
+          OUT="output/${OUTPUT_NAME}.ipa"
+          test -s "$OUT"
+          unzip -tq "$OUT" > /dev/null
+          unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/PlugIns/.*\.appex/Info.plist'
+          unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/Frameworks/.*\.dylib'
+          unzip -p "$OUT" Payload/YouTubeMusic.app/Info.plist > output-info.plist
+          if /usr/libexec/PlistBuddy -c 'Print :UISupportedDevices' output-info.plist > /dev/null 2>&1; then
+            echo "::error::UISupportedDevices is still present in the output IPA."
+            exit 1
+          fi
 
-      - name: Upload Artifacts
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: modded-ytm
-          path: output/*.ipag
+          name: ${{ env.OUTPUT_NAME }}
+          path: output/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.OUTPUT_NAME }}_(${{ github.run_number }})
+          name: MaxMusic ${{ env.TWEAK_VERSION }} and ${{ env.YTM_VERSION }}
+          files: output/*.ipa
+          draft: false
+          generate_release_notes: true
