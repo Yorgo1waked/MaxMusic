@@ -1,0 +1,45 @@
+name: Build Custom YouTube Music IPA
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          brew install ipatool || true
+          npm install -g ldid
+
+      - name: Download Azule
+        run: |
+          git clone https://github.com/maccan/Azule.git ~/Azule
+          sudo ln -sf ~/Azule/azule /usr/local/bin/azule
+
+      - name: Fetch Tweaks
+        run: |
+          mkdir -p tweaks
+          # Download OpenInApp tweak dylib / deb
+          curl -L -o tweaks/OpenInApp.deb https://github.com/PoomSmart/OpenInApp/releases/latest/download/com.poomsmart.openinapp_deb.deb || true
+          
+          # Note: Download your preferred YTM mod deb (e.g. YTMusicUltimate / MaxMusic deb)
+          # Place any additional .deb or .dylib files in the tweaks/ folder
+
+      - name: Process and Inject IPA
+        run: |
+          # Ensure your decrypted YTM IPA is present (or link direct download URL)
+          # Inject OpenInApp and extra tweaks using Azule:
+          azule -i base_ytm.ipa -o output/ -f tweaks/*.deb -v -u -s
+
+      - name: Upload Modded IPA to Releases
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.run_number }}
+          files: output/*.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
