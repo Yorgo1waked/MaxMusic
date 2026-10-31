@@ -221,7 +221,7 @@ jobs:
           else
             echo "::warning::OpenInApp deb is unavailable; continuing without it."
           fi
-          "$RUNNER_TEMP/Azule/azule" -UuS -v -p "$DISPLAY_NAME" -b "$BUNDLE_ID" -i ytm.ipa -o "output/${OUTPUT_NAME}.ipa" -f "${debs[@]}"
+          "$RUNNER_TEMP/Azule/azule" -UuS -v -p "$DISPLAY_NAME" -b "$BUNDLE_ID" -i "$PWD/ytm.ipa" -n "$OUTPUT_NAME" -o "$PWD/output" -f "${debs[@]}"
 
       - name: Verify IPA
         run: |
