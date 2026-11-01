@@ -124,7 +124,7 @@ jobs:
           TWEAK_VERSION="$(sed -n 's/^PACKAGE_VERSION[[:space:]]*=[[:space:]]*//p' Makefile | head -1)"
           echo "YTM_VERSION=$YTM_VERSION" >> "$GITHUB_ENV"
           echo "TWEAK_VERSION=$TWEAK_VERSION" >> "$GITHUB_ENV"
-          echo "OUTPUT_NAME=MaxMusic_${TWEAK_VERSION}_$YTM_VERSION" >> "$GITHUB_ENV"
+          echo "OUTPUT_NAME=MaxMusic_${TWEAK_VERSION}_${YTM_VERSION}_b${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
           if ! unzip -l ytm.ipa | grep -q 'Payload/YouTubeMusic.app/PlugIns/.*\.appex/Info.plist'; then
             echo "::error::The base IPA does not contain app extensions."
             exit 1
@@ -285,6 +285,31 @@ jobs:
           git clone --quiet --depth=1 https://github.com/mpelteshki/Azule.git "$RUNNER_TEMP/Azule"
           chmod +x "$RUNNER_TEMP/Azule/azule" "$RUNNER_TEMP"/Azule/bin/darwin/*
 
+      - name: Use ElleKit for iOS 26 compatibility
+        run: |
+          rm -rf "$RUNNER_TEMP/ellekit-deb" "$RUNNER_TEMP/ellekit.deb"
+          mkdir -p "$RUNNER_TEMP/ellekit-deb"
+          curl -fL --retry 5 --retry-delay 2 -o "$RUNNER_TEMP/ellekit.deb" \
+            https://ellekit.space/pool/ellekit_1.2_iphoneos-arm64.deb
+          echo "e21dc91bdc1be193dc915daecfff45256239b4fe583a36861e662ab1f43906dc  $RUNNER_TEMP/ellekit.deb" | shasum -a 256 -c -
+          dpkg-deb -x "$RUNNER_TEMP/ellekit.deb" "$RUNNER_TEMP/ellekit-deb"
+          LIBELLEKIT="$RUNNER_TEMP/ellekit-deb/var/jb/usr/lib/libellekit.dylib"
+          test -f "$LIBELLEKIT"
+          FRAMEWORK="$RUNNER_TEMP/Azule/lib/CydiaSubstrate.framework"
+          rm -rf "$FRAMEWORK"
+          mkdir -p "$FRAMEWORK"
+          cp "$LIBELLEKIT" "$FRAMEWORK/CydiaSubstrate"
+          install_name_tool -id @rpath/CydiaSubstrate.framework/CydiaSubstrate "$FRAMEWORK/CydiaSubstrate"
+          plutil -create xml1 "$FRAMEWORK/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleExecutable string CydiaSubstrate' "$FRAMEWORK/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string com.evln.ellekit' "$FRAMEWORK/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleName string ElleKit' "$FRAMEWORK/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundlePackageType string FMWK' "$FRAMEWORK/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleShortVersionString string 1.2' "$FRAMEWORK/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleVersion string 1.2' "$FRAMEWORK/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :MinimumOSVersion string 15.0' "$FRAMEWORK/Info.plist"
+          plutil -lint "$FRAMEWORK/Info.plist"
+
       - name: Inject tweaks with Azule
         run: |
           mkdir -p output
@@ -310,6 +335,11 @@ jobs:
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/Frameworks/.*\.dylib'
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/YTMusicUltimate.bundle/Info.plist'
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/Frameworks/CydiaSubstrate.framework/CydiaSubstrate'
+          unzip -p "$OUT" Payload/YouTubeMusic.app/Frameworks/CydiaSubstrate.framework/CydiaSubstrate > output-substrate
+          if ! otool -L output-substrate | grep -q 'libswiftCore.dylib'; then
+            echo "::error::CydiaSubstrate.framework was not replaced with ElleKit."
+            exit 1
+          fi
           unzip -p "$OUT" Payload/YouTubeMusic.app/Frameworks/YTMusicUltimate.dylib > output-tweak.dylib
           if ! otool -l output-tweak.dylib | grep -A2 LC_RPATH | grep -qE 'path @loader_path \(offset [0-9]+\)'; then
             echo "::error::YTMusicUltimate.dylib is missing the @loader_path rpath."
@@ -332,8 +362,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ env.OUTPUT_NAME }}_(${{ github.run_number }})
-          name: MaxMusic ${{ env.TWEAK_VERSION }} and ${{ env.YTM_VERSION }}
+          tag_name: ${{ env.OUTPUT_NAME }}
+          name: MaxMusic ${{ env.TWEAK_VERSION }} and ${{ env.YTM_VERSION }} (build ${{ github.run_number }})
           files: output/*.ipa
           draft: false
           generate_release_notes: true
