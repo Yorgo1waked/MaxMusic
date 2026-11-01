@@ -93,7 +93,10 @@
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"avCell"];
         cell.textLabel.text = LOC(@"AV_DEFAULT_MODE");
 
-        UISegmentedControl *control = [[UISegmentedControl alloc] initWithItems:@[[UIImage systemImageNamed:@"music.note"], [UIImage systemImageNamed:@"film"]]];
+        UIImage *musicImage = [UIImage systemImageNamed:@"music.note"];
+        UIImage *filmImage = [UIImage systemImageNamed:@"film"];
+        NSArray *modeItems = @[musicImage ?: [UIImage new], filmImage ?: [UIImage new]];
+        UISegmentedControl *control = [[UISegmentedControl alloc] initWithItems:modeItems];
         control.selectedSegmentIndex = [YTMUltimateDict[@"audioVideoMode"] integerValue];
         [control addTarget:self action:@selector(controlSelect:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = control;
