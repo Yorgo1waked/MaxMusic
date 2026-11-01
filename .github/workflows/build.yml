@@ -203,6 +203,19 @@ jobs:
           make clean package DEBUG=0 FINALPACKAGE=1
           mv packages/*.deb ../volumeboostyt.deb
 
+      - name: Make VolumeBoostYT target YouTube Music
+        if: ${{ inputs.enable_volumeboostyt }}
+        run: |
+          rm -rf "$RUNNER_TEMP/volumeboostyt-deb"
+          mkdir -p "$RUNNER_TEMP/volumeboostyt-deb"
+          dpkg-deb -R volumeboostyt.deb "$RUNNER_TEMP/volumeboostyt-deb"
+          PLIST="$(find "$RUNNER_TEMP/volumeboostyt-deb" -name 'VolumeBoostYT.plist' -print -quit)"
+          test -n "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :Filter:Bundles:0 $BUNDLE_ID" "$PLIST"
+          plutil -lint "$PLIST"
+          rm volumeboostyt.deb
+          dpkg-deb -b "$RUNNER_TEMP/volumeboostyt-deb" volumeboostyt.deb
+
       - name: Build MaxMusic tweak
         run: |
           make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless SIDELOADING=1
@@ -314,6 +327,11 @@ jobs:
         run: |
           mkdir -p output
           files=("$PWD/ytmult.deb")
+          for deb in rymd ytmabc youmusicpip volumeboostyt; do
+            if [ -s "$PWD/$deb.deb" ]; then
+              files+=("$PWD/$deb.deb")
+            fi
+          done
           if [ -s "$PWD/tweaks/OpenInApp.deb" ]; then
             files+=("$PWD/tweaks/OpenInApp.deb")
           fi
