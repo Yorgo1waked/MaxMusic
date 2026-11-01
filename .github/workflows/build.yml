@@ -48,6 +48,11 @@ on:
         required: false
         default: ""
         type: string
+      disable_appgroup_redirect:
+        description: Disable the app group container redirect (needed for widgets with SideStore/paid cert)
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -218,7 +223,11 @@ jobs:
 
       - name: Build MaxMusic tweak
         run: |
-          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless SIDELOADING=1
+          CFLAGS=""
+          if [ "${{ inputs.disable_appgroup_redirect }}" = "true" ]; then
+            CFLAGS="-DDISABLE_APPGROUP_REDIRECT"
+          fi
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless SIDELOADING=1 ADDITIONAL_CFLAGS="$CFLAGS"
           mv packages/*.deb ytmult.deb
 
       - name: Make tweak find its bundled CydiaSubstrate
