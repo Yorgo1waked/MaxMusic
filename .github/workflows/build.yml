@@ -130,6 +130,17 @@ jobs:
             exit 1
           fi
 
+      - name: Bundle tweak resources
+        run: |
+          rm -rf ytm-base
+          mkdir ytm-base
+          unzip -q ytm.ipa -d ytm-base
+          cp -R "layout/Library/Application Support/YTMusicUltimate.bundle" "ytm-base/Payload/YouTubeMusic.app/YTMusicUltimate.bundle"
+          test -f "ytm-base/Payload/YouTubeMusic.app/YTMusicUltimate.bundle/Info.plist"
+          rm ytm.ipa
+          (cd ytm-base && zip -qry -X ../ytm.ipa .)
+          rm -rf ytm-base
+
       - name: Clone headers
         run: |
           for repo in YouTubeHeader PSHeader YouTubeMusicHeader; do
@@ -279,6 +290,7 @@ jobs:
           unzip -tq "$OUT" > /dev/null
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/PlugIns/.*\.appex/Info.plist'
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/Frameworks/.*\.dylib'
+          unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/YTMusicUltimate.bundle/Info.plist'
           unzip -p "$OUT" Payload/YouTubeMusic.app/Info.plist > output-info.plist
           if /usr/libexec/PlistBuddy -c 'Print :UISupportedDevices' output-info.plist > /dev/null 2>&1; then
             echo "::error::UISupportedDevices is still present in the output IPA."
