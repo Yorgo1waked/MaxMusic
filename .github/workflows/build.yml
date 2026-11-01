@@ -394,3 +394,28 @@ jobs:
           files: output/*.ipa
           draft: false
           generate_release_notes: true
+
+      - name: Update Zeus source.json
+        run: |
+          cat > docs/source.json <<EOF
+          {
+            "name": "MaxMusic",
+            "identifier": "com.github.Yorgo1waked.MaxMusic",
+            "apps": [{
+              "name": "YouTube Music",
+              "bundleIdentifier": "${{ env.BUNDLE_ID }}",
+              "developerName": "Yorgo1waked",
+              "subtitle": "MaxMusic tweaked YouTube Music",
+              "iconURL": "https://raw.githubusercontent.com/Yorgo1waked/MaxMusic/main/Resources/icon.png",
+              "version": "${{ env.TWEAK_VERSION }}-${{ env.YTM_VERSION }}-b${{ github.run_number }}",
+              "versionDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "downloadURL": "https://github.com/Yorgo1waked/MaxMusic/releases/download/${{ env.OUTPUT_NAME }}/${{ env.OUTPUT_NAME }}.ipa",
+              "localizedDescription": "MaxMusic with VolumeBoostYT, RYMD, YTMABConfig, OpenInApp"
+            }]
+          }
+          EOF
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add docs/source.json
+          git commit -m "Update Zeus source.json for ${{ env.OUTPUT_NAME }}" || echo "No changes"
+          git push
