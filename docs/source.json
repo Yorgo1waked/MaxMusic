@@ -1,17 +1,15 @@
 {
   "name": "MaxMusic",
   "identifier": "com.github.Yorgo1waked.MaxMusic",
-  "apps": [
-    {
-      "name": "YouTube Music",
-      "bundleIdentifier": "com.google.ios.youtubemusic",
-      "developerName": "Yorgo1waked",
-      "subtitle": "MaxMusic tweaked YouTube Music",
-      "iconURL": "https://raw.githubusercontent.com/Yorgo1waked/MaxMusic/main/Resources/icon.png",
-      "version": "2.4.1-9.41.2-b13",
-      "versionDate": "2026-11-01T07:51:00Z",
-      "downloadURL": "https://github.com/Yorgo1waked/MaxMusic/releases/download/MaxMusic_2.4.1_9.41.2_b13/MaxMusic_2.4.1_9.41.2_b13.ipa",
-      "localizedDescription": "MaxMusic with VolumeBoostYT, RYMD, YTMABConfig, OpenInApp"
-    }
-  ]
+  "apps": [{
+    "name": "YouTube Music",
+    "bundleIdentifier": "com.google.ios.youtubemusic",
+    "developerName": "Yorgo1waked",
+    "subtitle": "MaxMusic tweaked YouTube Music",
+    "iconURL": "https://raw.githubusercontent.com/Yorgo1waked/MaxMusic/main/Resources/icon.png",
+    "version": "2.4.1-9.41.2-b14",
+    "versionDate": "2026-11-01T09:17:53Z",
+    "downloadURL": "https://github.com/Yorgo1waked/MaxMusic/releases/download/MaxMusic_2.4.1_9.41.2_b14/MaxMusic_2.4.1_9.41.2_b14.ipa",
+    "localizedDescription": "MaxMusic with VolumeBoostYT, RYMD, YTMABConfig, OpenInApp"
+  }]
 }
