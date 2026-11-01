@@ -76,7 +76,7 @@ jobs:
           submodules: recursive
 
       - name: Install dependencies
-        run: brew install make ldid libplist
+        run: brew install make ldid libplist dpkg
 
       - name: Add GNU make to PATH
         run: echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
@@ -208,6 +208,22 @@ jobs:
           make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless SIDELOADING=1
           mv packages/*.deb ytmult.deb
 
+      - name: Make tweak find its bundled CydiaSubstrate
+        run: |
+          rm -rf "$RUNNER_TEMP/ytmult-deb"
+          mkdir -p "$RUNNER_TEMP/ytmult-deb"
+          dpkg-deb -R ytmult.deb "$RUNNER_TEMP/ytmult-deb"
+          DYLIB="$(find "$RUNNER_TEMP/ytmult-deb" -name 'YTMusicUltimate.dylib' -print -quit)"
+          test -n "$DYLIB"
+          install_name_tool -add_rpath @loader_path "$DYLIB" 2>/dev/null || true
+          if ! otool -l "$DYLIB" | grep -A2 LC_RPATH | grep -q '@loader_path'; then
+            echo "::error::Failed to add @loader_path rpath to YTMusicUltimate.dylib"
+            exit 1
+          fi
+          ldid -S "$DYLIB"
+          rm ytmult.deb
+          dpkg-deb -b "$RUNNER_TEMP/ytmult-deb" ytmult.deb
+
       - name: Fetch OpenInApp
         if: ${{ inputs.enable_openinapp }}
         env:
@@ -291,6 +307,12 @@ jobs:
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/PlugIns/.*\.appex/Info.plist'
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/Frameworks/.*\.dylib'
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/YTMusicUltimate.bundle/Info.plist'
+          unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/Frameworks/CydiaSubstrate.framework/CydiaSubstrate'
+          unzip -p "$OUT" Payload/YouTubeMusic.app/Frameworks/YTMusicUltimate.dylib > output-tweak.dylib
+          if ! otool -l output-tweak.dylib | grep -A2 LC_RPATH | grep -q '@loader_path'; then
+            echo "::error::YTMusicUltimate.dylib is missing the @loader_path rpath."
+            exit 1
+          fi
           unzip -p "$OUT" Payload/YouTubeMusic.app/Info.plist > output-info.plist
           if /usr/libexec/PlistBuddy -c 'Print :UISupportedDevices' output-info.plist > /dev/null 2>&1; then
             echo "::error::UISupportedDevices is still present in the output IPA."
