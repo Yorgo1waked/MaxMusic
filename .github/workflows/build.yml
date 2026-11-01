@@ -39,12 +39,12 @@ on:
         default: true
         type: boolean
       enable_openinapp:
-        description: Inject OpenInApp when a working deb URL is provided
+        description: Add the Open in YouTube Music Safari extension
         required: false
         default: false
         type: boolean
       openinapp_deb_url:
-        description: Direct URL to an OpenInApp deb file
+        description: Optional direct URL to an OpenInApp deb; blank uses the built-in Safari extension
         required: false
         default: ""
         type: string
@@ -198,14 +198,58 @@ jobs:
           mv packages/*.deb ytmult.deb
 
       - name: Fetch OpenInApp
-        if: ${{ inputs.enable_openinapp && inputs.openinapp_deb_url != '' }}
-        continue-on-error: true
+        if: ${{ inputs.enable_openinapp }}
+        env:
+          OPENINAPP_DEB_URL: ${{ inputs.openinapp_deb_url }}
         run: |
           mkdir -p tweaks
-          rm -f tweaks/OpenInApp.deb tweaks/OpenInApp.deb.tmp
-          curl -fL --retry 3 --retry-delay 2 -o tweaks/OpenInApp.deb.tmp "${{ inputs.openinapp_deb_url }}"
-          test -s tweaks/OpenInApp.deb.tmp
-          mv tweaks/OpenInApp.deb.tmp tweaks/OpenInApp.deb
+          rm -rf tweaks/OpenInApp.deb tweaks/OpenInApp.deb.tmp tweaks/OpenInApp.appex
+          if [ -n "$OPENINAPP_DEB_URL" ]; then
+            curl -fL --retry 3 --retry-delay 2 -o tweaks/OpenInApp.deb.tmp "$OPENINAPP_DEB_URL"
+            test -s tweaks/OpenInApp.deb.tmp
+            mv tweaks/OpenInApp.deb.tmp tweaks/OpenInApp.deb
+          else
+            git clone --quiet --depth=1 https://github.com/BillyCurtis/OpenYouTubeSafariExtension.git "$RUNNER_TEMP/OpenInAppSource"
+            cp -R "$RUNNER_TEMP/OpenInAppSource/OpenYouTubeSafariExtension.appex" "tweaks/OpenInApp.appex"
+            APPEX="$PWD/tweaks/OpenInApp.appex"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Open in YouTube Music" "$APPEX/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleName OpenInApp" "$APPEX/Info.plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.google.ios.youtubemusic.OpenInApp.Extension" "$APPEX/Info.plist"
+            python3 - "$APPEX" <<'PY'
+          import json, pathlib, sys
+
+          appex = pathlib.Path(sys.argv[1])
+          manifest = appex / "manifest.json"
+          data = json.loads(manifest.read_text())
+          data["name"] = "Open in YouTube Music"
+          data["description"] = "Opens music.youtube.com links in the YouTube Music app"
+          data["content_scripts"][0]["matches"] = ["*://music.youtube.com/*"]
+          manifest.write_text(json.dumps(data, indent=2))
+
+          (appex / "content.js").write_text("""(function () {
+            const scheme = "vnd.youtube.music://";
+            function openInApp() {
+              if (!/(^|\.)music\.youtube\.com$/.test(location.hostname)) return;
+              const parts = location.pathname.split("/").filter(Boolean);
+              if (parts[0] === "watch") {
+                const id = new URLSearchParams(location.search).get("v");
+                if (id) location.href = scheme + "watch?v=" + encodeURIComponent(id);
+              } else if (parts[0] === "playlist") {
+                const id = new URLSearchParams(location.search).get("list");
+                if (id) location.href = scheme + "playlist?list=" + encodeURIComponent(id);
+              } else if (parts.length) {
+                location.href = scheme + parts.slice(0, 2).join("/") + location.search;
+              }
+            }
+            if (document.readyState === "loading") {
+              document.addEventListener("DOMContentLoaded", openInApp, { once: true });
+            } else {
+              openInApp();
+            }
+          })();
+          """)
+          PY
+          fi
 
       - name: Download Azule
         run: |
@@ -215,13 +259,18 @@ jobs:
       - name: Inject tweaks with Azule
         run: |
           mkdir -p output
-          debs=("$PWD/ytmult.deb")
+          files=("$PWD/ytmult.deb")
           if [ -s "$PWD/tweaks/OpenInApp.deb" ]; then
-            debs+=("$PWD/tweaks/OpenInApp.deb")
-          else
-            echo "::warning::OpenInApp deb is unavailable; continuing without it."
+            files+=("$PWD/tweaks/OpenInApp.deb")
           fi
-          "$RUNNER_TEMP/Azule/azule" -UuS -v -p "$DISPLAY_NAME" -b "$BUNDLE_ID" -i "$PWD/ytm.ipa" -n "$OUTPUT_NAME" -o "$PWD/output" -f "${debs[@]}"
+          if [ -d "$PWD/tweaks/OpenInApp.appex" ]; then
+            files+=("$PWD/tweaks/OpenInApp.appex")
+          fi
+          if [ "${{ inputs.enable_openinapp }}" = "true" ] && [ "${#files[@]}" -eq 1 ]; then
+            echo "::error::OpenInApp was enabled but no injectable source was prepared."
+            exit 1
+          fi
+          "$RUNNER_TEMP/Azule/azule" -UuS -v -p "$DISPLAY_NAME" -b "$BUNDLE_ID" -i "$PWD/ytm.ipa" -n "$OUTPUT_NAME" -o "$PWD/output" -f "${files[@]}"
 
       - name: Verify IPA
         run: |
