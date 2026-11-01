@@ -109,6 +109,7 @@ static NSString *accessGroupID() {
 - (id)bundleId { return YT_BUNDLE_ID; }
 %end
 
+#ifndef DISABLE_APPGROUP_REDIRECT
 %hook NSFileManager
 - (NSURL *)containerURLForSecurityApplicationGroupIdentifier:(NSString *)groupIdentifier {
     if (groupIdentifier != nil) {
@@ -119,6 +120,7 @@ static NSString *accessGroupID() {
     return %orig(groupIdentifier);
 }
 %end
+#endif
 
 #pragma mark - Thanks PoomSmart for the following hooks
 /* IAmYouTube + Extra hooks for ytmusic */
