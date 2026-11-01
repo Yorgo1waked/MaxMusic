@@ -215,8 +215,10 @@ jobs:
           dpkg-deb -R ytmult.deb "$RUNNER_TEMP/ytmult-deb"
           DYLIB="$(find "$RUNNER_TEMP/ytmult-deb" -name 'YTMusicUltimate.dylib' -print -quit)"
           test -n "$DYLIB"
-          install_name_tool -add_rpath @loader_path "$DYLIB" 2>/dev/null || true
-          if ! otool -l "$DYLIB" | grep -A2 LC_RPATH | grep -q '@loader_path'; then
+          if ! otool -l "$DYLIB" | grep -A2 LC_RPATH | grep -qE 'path @loader_path \(offset [0-9]+\)'; then
+            install_name_tool -add_rpath @loader_path "$DYLIB"
+          fi
+          if ! otool -l "$DYLIB" | grep -A2 LC_RPATH | grep -qE 'path @loader_path \(offset [0-9]+\)'; then
             echo "::error::Failed to add @loader_path rpath to YTMusicUltimate.dylib"
             exit 1
           fi
@@ -309,7 +311,7 @@ jobs:
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/YTMusicUltimate.bundle/Info.plist'
           unzip -l "$OUT" | grep -q 'Payload/YouTubeMusic.app/Frameworks/CydiaSubstrate.framework/CydiaSubstrate'
           unzip -p "$OUT" Payload/YouTubeMusic.app/Frameworks/YTMusicUltimate.dylib > output-tweak.dylib
-          if ! otool -l output-tweak.dylib | grep -A2 LC_RPATH | grep -q '@loader_path'; then
+          if ! otool -l output-tweak.dylib | grep -A2 LC_RPATH | grep -qE 'path @loader_path \(offset [0-9]+\)'; then
             echo "::error::YTMusicUltimate.dylib is missing the @loader_path rpath."
             exit 1
           fi
