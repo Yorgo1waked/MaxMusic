@@ -109,18 +109,20 @@ static NSString *accessGroupID() {
 - (id)bundleId { return YT_BUNDLE_ID; }
 %end
 
-#ifndef DISABLE_APPGROUP_REDIRECT
 %hook NSFileManager
 - (NSURL *)containerURLForSecurityApplicationGroupIdentifier:(NSString *)groupIdentifier {
+#ifdef DISABLE_APPGROUP_REDIRECT
+    return %orig(groupIdentifier);
+#else
     if (groupIdentifier != nil) {
         NSArray *paths = [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask];
         NSURL *documentsURL = [paths lastObject];
         return [documentsURL URLByAppendingPathComponent:@"AppGroup"];
     }
     return %orig(groupIdentifier);
+#endif
 }
 %end
-#endif
 
 #pragma mark - Thanks PoomSmart for the following hooks
 /* IAmYouTube + Extra hooks for ytmusic */
