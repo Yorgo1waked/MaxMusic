@@ -59,7 +59,13 @@
     if (indexPath.section == 0 && indexPath.row == 0) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"cell0"];
 
-        UISegmentedControl *startupPage = [[UISegmentedControl alloc] initWithItems:@[[self tbImageNamed:@"yt_outline_home_24pt"], [self tbImageNamed:@"youtube_outline/samples_24pt"], [self tbImageNamed:@"yt_outline_compass_24pt"], [self tbImageNamed:@"yt_outline_library_music_24pt"], [self tbImageNamed:@"icons/downloads"]]];
+        NSArray *startupImageNames = @[@"yt_outline_home_24pt", @"youtube_outline/samples_24pt", @"yt_outline_compass_24pt", @"yt_outline_library_music_24pt", @"icons/downloads"];
+        NSMutableArray *startupImages = [NSMutableArray arrayWithCapacity:startupImageNames.count];
+        for (NSString *imageName in startupImageNames) {
+            UIImage *image = [self tbImageNamed:imageName];
+            [startupImages addObject:image ?: [UIImage new]];
+        }
+        UISegmentedControl *startupPage = [[UISegmentedControl alloc] initWithItems:startupImages];
 
         for (UIView *segmentView in startupPage.subviews) {
             for (UIView *subview in segmentView.subviews) {
